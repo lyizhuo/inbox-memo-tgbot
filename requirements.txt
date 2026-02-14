@@ -1,4 +1,4 @@
 python-telegram-bot
 requests
 flask
-boto3 #用于连接 B2
+boto3 #用于连接 B2 OSS
