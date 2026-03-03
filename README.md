@@ -70,4 +70,3 @@ https://api.telegram.org/bot<你的BOT_TOKEN>/setWebhook?url=https://<你的VERC
 
 * **请求频率**：inBox API 每天限制上传 50 条笔记，请注意使用频率。
 * **图片大小**：受 Vercel 免费版函数运行时间（10s）限制，建议不要发送过大的原图，以免上传超时。
-* **上传的图片暂时无法在Inbox正常显示**：受Inbox限制，透过API上传的图片链接似乎无法在APP中正常显示
