@@ -52,10 +52,11 @@ async def process_msg(update: Update):
             file_bytes = requests.get(file.file_path).content
             file_name = f"inbox/{datetime.now().strftime('%Y%m%d%H%M%S')}_{photo.file_id[:8]}.jpg"
             
-            try:
-                img_url = await upload_to_b2(file_bytes, file_name)
-                content = f"![]( {img_url} )\n"
-            except Exception as e:
+        try:
+            img_url = await upload_to_b2(file_bytes, file_name)
+            # 关键修改点：去掉括号内部的两个空格，并对 img_url 使用 .strip()
+            content = f"![]({img_url.strip()})\n" 
+        except Exception as e:
                 await bot.send_message(chat_id=update.message.chat_id, text=f"⚠️ 图片上传失败: {str(e)}")
                 return
 
