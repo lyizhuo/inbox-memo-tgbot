@@ -74,7 +74,8 @@ async def process_msg(update: Update):
         # 4. 发送到 inBox (同步请求)
         inbox_api = f'https://api.gudong.site/inbox/{INBOX_TOKEN}'
         try:
-            res = requests.post(inbox_api, json={"content": content, "title": "TG 随手记"}, timeout=10)
+            #res = requests.post(inbox_api, json={"content": content, "title": "TG 随手记"}, timeout=10)
+            res = requests.post(inbox_api, json={"content": content}, timeout=10)
             if res.json().get("code") == 0:
                 await bot.send_message(chat_id=update.message.chat_id, text="✅ 已存入 inBox")
             else:
