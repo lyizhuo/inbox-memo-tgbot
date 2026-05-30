@@ -33,16 +33,53 @@ async def upload_to_b2(file_content, file_name):
 async def process_msg(update: Update):
     if not update.message:
         return
-    # 注释掉发送人 ID 限制
-    # if str(update.message.from_user.id) != ALLOWED_USER_ID:
-    #     return
+
+    # 过滤 bot 自己的消息
+    if update.message.from_user and update.message.from_user.is_bot:
+        return
+
+    # 群聊：只响应 @inbox_memo_bot 的消息
+    chat = update.message.chat
+    if chat.type in ('group', 'supergroup'):
+        bot_username = None
+        text = update.message.text or update.message.caption or ""
+        # 检查 entities 中是否有 mention
+        if update.message.entities:
+            for entity in update.message.entities:
+                if entity.type == "mention":
+                    mention_text = text[entity.offset:entity.offset + entity.length]
+                    # 先获取 bot username 做匹配
+                    async with Bot(token=TOKEN) as bot:
+                        me = await bot.get_me()
+                        bot_username = me.username
+                        if mention_text.lower() == f"@{bot_username.lower()}":
+                            break
+            else:
+                # 没有匹配到 @bot，检查是否根本没有 mention
+                has_bot_mention = False
+                if update.message.entities:
+                    for entity in update.message.entities:
+                        if entity.type == "mention":
+                            mention_text = text[entity.offset:entity.offset + entity.length]
+                            if bot_username and mention_text.lower() == f"@{bot_username.lower()}":
+                                has_bot_mention = True
+                                break
+                if not has_bot_mention:
+                    return
+        else:
+            # 群聊中没有 entity，说明不是 @bot 的消息
+            return
+
+    # 过滤命令
     if update.message.text and update.message.text.startswith('/'):
         return
+
     async with Bot(token=TOKEN) as bot:
-        # 过滤 bot 自己的消息
         me = await bot.get_me()
+        # 再次过滤 bot 自己
         if update.message.from_user and update.message.from_user.id == me.id:
             return
+
         content = ""
         if update.message.photo:
             try:
@@ -55,12 +92,15 @@ async def process_msg(update: Update):
             except Exception as e:
                 await bot.send_message(chat_id=update.message.chat_id, text=f"⚠️ 图片上传失败: {str(e)}")
                 return
+
         if update.message.text:
             content += update.message.text
         elif update.message.caption:
             content += update.message.caption
+
         if not content.strip():
             return
+
         inbox_api = f'https://api.gudong.site/inbox/{INBOX_TOKEN}'
         try:
             res = requests.post(inbox_api, json={"content": content}, timeout=10)
