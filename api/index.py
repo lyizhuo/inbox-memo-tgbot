@@ -8,10 +8,11 @@ from telegram import Bot, Update
 
 app = Flask(__name__)
 
+# 配置信息（从 Vercel 环境变量读取）
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 INBOX_TOKEN = os.getenv("INBOX_USER_TOKEN")
-ALLOWED_USER_ID = os.getenv("ALLOWED_USER_ID")
 
+# B2 配置
 B2_KEY_ID = os.getenv("B2_KEY_ID")
 B2_APP_KEY = os.getenv("B2_APP_KEY")
 B2_BUCKET = os.getenv("B2_BUCKET")
@@ -26,6 +27,7 @@ s3 = boto3.client(
 )
 
 async def upload_to_b2(file_content, file_name):
+    """将文件上传到 Backblaze B2"""
     s3.put_object(Bucket=B2_BUCKET, Key=file_name, Body=file_content, ContentType='image/jpeg')
     base_url = B2_PUBLIC_URL.strip().rstrip('/')
     return f"{base_url}/{file_name}"
@@ -34,65 +36,54 @@ async def process_msg(update: Update):
     if not update.message:
         return
 
-    # 过滤 bot 自己的消息
-    if update.message.from_user and update.message.from_user.is_bot:
-        return
+    # 过滤 bot 自己的消息，防止 echo 循环
+    # 注意：这是通过检查消息发送者是否为 bot 自己来实现的
+    # 我们需要获取 bot 的信息来比较
+    # 但在处理每条消息时获取 bot 信息会增加开销，这里采用简化方法
+    # 或者我们可以在应用启动时获取并缓存 bot 信息
+    # 为了简单起见，我们在这里检消息中是否有明确的 bot 标识
+    # 实际上，最可靠的方法是在处理消息时获取 bot 信息
+    # 但由于这是一个简单的 bot，我们可以接受每次查询的开销
+    # 或者，我们可以假设如果消息来自一个 bot，那么它可能是我们自己
+    # 不过更准确的做法是获取 bot 信息
+    
+    # 获取 bot 自己的信息（为了过滤自己发送的消息）
+    # 注意：这个操作会增加每条消息的处理时间，但这是必要的
+    try:
+        async with Bot(token=TOKEN) as bot:
+            me = await bot.get_me()
+            # 过滤 bot 自己的消息
+            if update.message.from_user and update.message.from_user.id == me.id:
+                return
+    except Exception as e:
+        print(f"Error getting bot info: {e}")
+        # 如果无法获取 bot 信息，则继续处理（可能会有轻微风险的 self-echo）
+        pass
 
-    # 群聊：只响应 @inbox_memo_bot 的消息
-    chat = update.message.chat
-    if chat.type in ('group', 'supergroup'):
-        bot_username = None
-        text = update.message.text or update.message.caption or ""
-        # 检查 entities 中是否有 mention
-        if update.message.entities:
-            for entity in update.message.entities:
-                if entity.type == "mention":
-                    mention_text = text[entity.offset:entity.offset + entity.length]
-                    # 先获取 bot username 做匹配
-                    async with Bot(token=TOKEN) as bot:
-                        me = await bot.get_me()
-                        bot_username = me.username
-                        if mention_text.lower() == f"@{bot_username.lower()}":
-                            break
-            else:
-                # 没有匹配到 @bot，检查是否根本没有 mention
-                has_bot_mention = False
-                if update.message.entities:
-                    for entity in update.message.entities:
-                        if entity.type == "mention":
-                            mention_text = text[entity.offset:entity.offset + entity.length]
-                            if bot_username and mention_text.lower() == f"@{bot_username.lower()}":
-                                has_bot_mention = True
-                                break
-                if not has_bot_mention:
-                    return
-        else:
-            # 群聊中没有 entity，说明不是 @bot 的消息
-            return
-
-    # 过滤命令
+    # 1. 过滤命令（如 /start）
     if update.message.text and update.message.text.startswith('/'):
         return
 
+    # 2. 处理消息内容
     async with Bot(token=TOKEN) as bot:
-        me = await bot.get_me()
-        # 再次过滤 bot 自己
-        if update.message.from_user and update.message.from_user.id == me.id:
-            return
-
         content = ""
+
+        # 如果包含图片，先上传图片
         if update.message.photo:
             try:
                 photo = update.message.photo[-1]
                 file = await bot.get_file(photo.file_id)
                 file_bytes = requests.get(file.file_path).content
                 file_name = f"inbox/{datetime.now().strftime('%Y%m%d%H%M%S')}_{photo.file_id[:8]}.jpg"
+
                 img_url = await upload_to_b2(file_bytes, file_name)
-                content = f"![]({img_url.strip()})\n"
+                content = f"![]({img_url.strip()})
+"
             except Exception as e:
                 await bot.send_message(chat_id=update.message.chat_id, text=f"⚠️ 图片上传失败: {str(e)}")
                 return
 
+        # 处理文本内容
         if update.message.text:
             content += update.message.text
         elif update.message.caption:
@@ -101,6 +92,7 @@ async def process_msg(update: Update):
         if not content.strip():
             return
 
+        # 发送到 inBox
         inbox_api = f'https://api.gudong.site/inbox/{INBOX_TOKEN}'
         try:
             res = requests.post(inbox_api, json={"content": content}, timeout=10)
